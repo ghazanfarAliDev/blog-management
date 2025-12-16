@@ -6,7 +6,7 @@ import {
   createPost,
   getPosts,
   getComments,
-  addComment as addCommentApi,
+  addComment,
 } from "@/lib/api";
 
 import { Button } from "@/components/ui/button";
@@ -54,7 +54,6 @@ interface Post {
   description: string;
   author: string;
   date: string;
-  comments: Comment[];
 }
 
 /* ================= PAGE ================= */
@@ -62,90 +61,69 @@ interface Post {
 export default function DashboardPage() {
   const router = useRouter();
 
-  /* ---------------- CREATE POST ---------------- */
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [openCreate, setOpenCreate] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
 
-  /* ---------------- COMMENTS ---------------- */
   const [openComments, setOpenComments] = useState(false);
   const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [loadingComments, setLoadingComments] = useState(false);
 
-  /* ---------------- POSTS ---------------- */
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(false);
-
   /* ================= LOAD POSTS ================= */
 
-  useEffect(() => {
-    async function loadPosts() {
-      try {
-        setLoading(true);
-        const data = await getPosts();
-        setPosts(data);
-      } catch (err) {
-        console.error("Failed to load posts", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadPosts();
-  }, []);
-
-  /* ================= HANDLERS ================= */
-
-  async function handleCreatePost() {
-    if (!title.trim() || !description.trim()) return;
-
+  async function loadPosts() {
+    setLoading(true);
     try {
-      await createPost(title, description);
-      const updated = await getPosts();
-      setPosts(updated);
-
-      setTitle("");
-      setDescription("");
-      setOpenCreate(false);
-    } catch (err) {
-      console.error("Create post failed", err);
+      const data = await getPosts();
+      setPosts(data);
+    } finally {
+      setLoading(false);
     }
   }
 
-  async function openCommentModal(post: Post) {
+  useEffect(() => {
+    loadPosts();
+  }, []);
+
+  /* ================= ACTIONS ================= */
+
+  async function handleCreatePost() {
+    if (!title || !description) return;
+
+    await createPost(title, description);
+    await loadPosts();
+
+    setTitle("");
+    setDescription("");
+    setOpenCreate(false);
+  }
+
+  async function openCommentsModal(post: Post) {
     setSelectedPost(post);
     setOpenComments(true);
     setLoadingComments(true);
 
-    try {
-      const data = await getComments(post.id);
-      setComments(data);
-    } catch (err) {
-      console.error("Failed to load comments", err);
-    } finally {
-      setLoadingComments(false);
-    }
+    const data = await getComments(post.id);
+    setComments(data);
+    setLoadingComments(false);
   }
 
   async function handleAddComment() {
-    if (!newComment.trim() || !selectedPost) return;
+    if (!newComment || !selectedPost) return;
 
-    try {
-      await addCommentApi(selectedPost.id, newComment);
-
-      const updatedComments = await getComments(selectedPost.id);
-      setComments(updatedComments);
-      setNewComment("");
-    } catch (err) {
-      console.error("Add comment failed", err);
-    }
+    await addComment(selectedPost.id, newComment);
+    const data = await getComments(selectedPost.id);
+    setComments(data);
+    setNewComment("");
   }
 
   function handleLogout() {
     localStorage.removeItem("authToken");
-    document.cookie = "token=; Max-Age=0; path=/";
     router.push("/login");
   }
 
@@ -153,26 +131,26 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-muted/40">
-      {/* Header */}
+      {/* HEADER */}
       <header className="border-b bg-background">
         <div className="container mx-auto flex h-16 items-center justify-between px-4">
           <h1 className="text-xl font-semibold">Dashboard</h1>
 
-          <div className="flex items-center gap-4">
+          <div className="flex gap-4">
             <Button onClick={() => setOpenCreate(true)}>Create Post</Button>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Avatar className="cursor-pointer">
-                  <AvatarFallback>AD</AvatarFallback>
+                  <AvatarFallback>ME</AvatarFallback>
                 </Avatar>
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end">
-                <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                <DropdownMenuLabel>Account</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  className="text-red-600 cursor-pointer"
+                  className="text-red-600"
                   onClick={handleLogout}
                 >
                   Logout
@@ -183,12 +161,12 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Posts */}
+      {/* POSTS */}
       <main className="container mx-auto px-4 py-6">
         {loading ? (
-          <p className="text-muted-foreground">Loading posts...</p>
+          <p>Loading posts...</p>
         ) : posts.length === 0 ? (
-          <p className="text-muted-foreground">No posts yet.</p>
+          <p>No posts yet.</p>
         ) : (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {posts.map((post) => (
@@ -196,21 +174,19 @@ export default function DashboardPage() {
                 <CardHeader>
                   <CardTitle>{post.title}</CardTitle>
                   <CardDescription>
-                    By {post.author} • {post.date}
+                    {post.author} • {post.date}
                   </CardDescription>
                 </CardHeader>
 
                 <CardContent>
-                  <p className="text-sm text-muted-foreground">
-                    {post.description}
-                  </p>
+                  <p className="text-sm">{post.description}</p>
                 </CardContent>
 
-                <CardFooter className="flex justify-between">
+                <CardFooter>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => openCommentModal(post)}
+                    onClick={() => openCommentsModal(post)}
                   >
                     View Comments
                   </Button>
@@ -221,36 +197,61 @@ export default function DashboardPage() {
         )}
       </main>
 
+      {/* CREATE POST MODAL */}
+      <Dialog open={openCreate} onOpenChange={setOpenCreate}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create Post</DialogTitle>
+            <DialogDescription>Add a new post</DialogDescription>
+          </DialogHeader>
+
+          <Input
+            placeholder="Title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+          <Textarea
+            placeholder="Description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenCreate(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreatePost}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* COMMENTS MODAL */}
       <Dialog open={openComments} onOpenChange={setOpenComments}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>{selectedPost?.title}</DialogTitle>
-            <DialogDescription>Comments</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 max-h-[300px] overflow-y-auto">
             {loadingComments ? (
-              <p className="text-sm text-muted-foreground">Loading...</p>
-            ) : comments.length ? (
-              comments.map((comment) => (
-                <div key={comment.id}>
-                  <p className="text-sm">{comment.text}</p>
+              <p>Loading...</p>
+            ) : comments.length === 0 ? (
+              <p>No comments yet.</p>
+            ) : (
+              comments.map((c) => (
+                <div key={c.id}>
+                  <p>{c.text}</p>
                   <p className="text-xs text-muted-foreground">
-                    {comment.author} • {comment.date}
+                    {c.author} • {c.date}
                   </p>
                   <Separator className="mt-2" />
                 </div>
               ))
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No comments yet.
-              </p>
             )}
           </div>
 
           <Textarea
-            placeholder="Add a comment..."
+            placeholder="Add comment..."
             value={newComment}
             onChange={(e) => setNewComment(e.target.value)}
           />
